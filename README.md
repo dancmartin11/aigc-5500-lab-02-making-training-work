@@ -5,13 +5,15 @@
 **Course:** Advanced Deep Learning (AIGC-5500-0NA)  
 **Professor:** Hossein Pourmodheji  
 
-Eight-layer `BrokenNet` on a synthetic binary classification task: reproduce the training failure, inspect gradients and activations, then test initialization and normalization changes in controlled stages.
+Diagnose why the provided eight-layer `BrokenNet` fails to train on a synthetic binary classification task. The project reproduces the failure, measures gradients and activations, and compares initialization and normalization changes in controlled training stages.
 
 ## Files
 
 ```text
 lab-02/
-├── docs/ (assignment instructions and Week 2 learning module)
+├── docs/
+│   ├── AIGC5500_Lab02_Making_Training_Work.pdf
+│   └── AIGC5500_Week02_Learning_Module.pdf
 ├── scripts/
 │   └── lab02_starter.py (unchanged starter code)
 ├── daniel_alejandro_castillo_martin_LAB2.ipynb (submission notebook)
@@ -35,10 +37,10 @@ lab-02/
    .venv\Scripts\Activate.ps1
    ```
 
-2. Install dependencies:
+2. Install the dependencies:
 
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
 
 3. Run the unchanged starter script from the repository root:
@@ -47,24 +49,35 @@ lab-02/
    python scripts/lab02_starter.py
    ```
 
-4. Open `daniel_alejandro_castillo_martin_LAB2.ipynb` and **Run All** cells.
+4. Open `daniel_alejandro_castillo_martin_LAB2.ipynb` from the repository root and **Run All** cells. Select the Python environment created above as the notebook kernel.
+
+The notebook reproduces the baseline, reports the gradient and activation diagnosis, trains each experimental stage, and plots their loss curves together.
 
 ## Baseline and diagnosis
 
-| Measurement | Result |
-|---|---:|
-| Baseline loss, epoch 0 | 0.7037 |
-| Baseline loss, epoch 49 | 0.6893 |
-| First hidden layer with 0% nonzero activations | [fill from notebook] |
-| First hidden-layer mean absolute weight gradient | [fill from notebook] |
-| Output-layer mean absolute weight gradient | [fill from notebook] |
+The unchanged starter trains `BrokenNet` for 50 epochs with plain SGD and a learning rate of 0.1. Its loss decreases only from **0.7037** to **0.689301**, remaining near the reference value of approximately **0.693**.
 
-The baseline loss remains close to approximately 0.693 after 50 epochs. [Add one or two sentences explaining the measured gradient and activation pattern.]
+The activation check shows that nonzero outputs fall from **6.71%** in hidden layer 1 to **0.12%** in layer 2. Hidden layer 3 is the first to output zeros across all 256 training examples; subsequent hidden layers also output zeros. The output weight receives no measurable gradient, while the output bias receives a mean absolute gradient of approximately **0.08847** before training.
 
-## Stages and results
+The starter initializes every hidden bias to **-2.0**. Most pre-activations become negative, and ReLU maps them to zero. Once the hidden activations collapse, the output cannot use the input features. Updating its bias can slightly reduce the loss, but it cannot learn the classification boundary.
 
-| Stage | Change from previous stage | Final loss |
-|---|---|---:|
-| 0 | Unmodified `BrokenNet` | 0.6893 |
+## Experimental stages
 
-Initialization, normalization, and final comparison stages will be added in the next commit.
+All runs use the same 256-example synthetic dataset, eight hidden layers of width 32, ReLU activations, plain SGD with a learning rate of 0.1, and 50 epochs. Each run creates a fresh model with `torch.manual_seed(0)`.
+
+| Stage | Hidden-layer initialization | Normalization | Final training loss |
+|---|---|---|---:|
+| 0: Baseline | Starter weights; biases of −2.0 | None | 0.689301 |
+| 1: Initialization | Kaiming normal weights; zero biases | None | 0.363229 |
+| 2: Normalization | Starter weights; biases of −2.0 | BatchNorm before each ReLU | 0.243709 |
+| 3: Initialization and Normalization | Kaiming normal weights; zero biases | BatchNorm before each ReLU | **0.227591** |
+
+Stages 1 and 2 each change one category relative to Stage 0. Stage 3 adds corrected initialization to Stage 2. The notebook reports a separate loss curve for each run and displays all four curves together.
+
+## Conclusion
+
+The baseline network ended at a loss of **0.689301** after 50 epochs. Its hidden activations collapsed to zero by layer 3, preventing signals from reaching the output. The output bias could still update, explaining the small decrease in baseline loss.
+
+Corrected initialization reduced final loss to **0.363229**, while batch normalization alone reduced it to **0.243709**. Normalization therefore made the largest isolated contribution under the fixed training settings: a reduction of **0.445592** relative to the baseline.
+
+Combining both changes produced the lowest loss, **0.227591**. This improved on normalization alone by **0.016118**, showing that corrected initialization added a smaller benefit once normalization was already present.
